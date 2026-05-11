@@ -215,8 +215,7 @@ def create_upload_link(
     instructions}``.
     """
     base_url = (
-        os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
-        or "https://cloudinary-video-mcp.fly.dev"
+        os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or "https://cloudinary-video-mcp.fly.dev"
     )
     return _create_upload_link(
         base_url=base_url,

@@ -1,0 +1,17 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+tests
+.gitignore
+.python-version
+uv.lock
+README.md.bak
+.env
+.env.*
+credentials.json
+token.json

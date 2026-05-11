@@ -1,10 +1,19 @@
-"""HTTP entrypoint: Streamable HTTP MCP at /mcp behind a bearer-token check.
+"""HTTP entrypoint: Streamable HTTP MCP at /mcp behind bearer-token / OAuth auth.
 
 Designed to run on Fly.io. Exposes:
-- GET  /           → service info (no auth)
-- GET  /healthz    → health probe (no auth)
-- POST /mcp        → MCP Streamable HTTP transport (requires bearer token)
-- GET  /mcp        → MCP Streamable HTTP transport (SSE; requires bearer token)
+- GET  /                                        → service info (no auth)
+- GET  /healthz                                 → health probe (no auth)
+- GET  /.well-known/oauth-protected-resource    → OAuth discovery (no auth)
+- GET  /.well-known/oauth-authorization-server  → OAuth discovery (no auth)
+- POST /oauth/register                          → DCR (RFC 7591)
+- GET/POST /oauth/authorize                     → consent page
+- POST /oauth/token                             → exchange code for access token
+- POST /mcp                                     → MCP Streamable HTTP (auth)
+- GET  /mcp                                     → MCP Streamable HTTP SSE (auth)
+
+Accepted credentials on /mcp:
+- The static MCP_BEARER_TOKEN (used by Claude Desktop / curl), or
+- An OAuth-issued access token from /oauth/token (used by claude.ai web).
 """
 
 from __future__ import annotations
@@ -21,11 +30,18 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 
 from gdrive_video_mcp import __version__
+from gdrive_video_mcp.oauth import attach_routes as attach_oauth_routes
+from gdrive_video_mcp.oauth import is_valid_access_token
 from gdrive_video_mcp.server import mcp
 
 
+def _wants_oauth_advert(path: str) -> bool:
+    """Return True for endpoints where unauthenticated requests should advertise OAuth."""
+    return path.startswith("/mcp")
+
+
 class BearerAuthMiddleware(BaseHTTPMiddleware):
-    """Require `Authorization: Bearer <token>` on the protected prefix.
+    """Require a valid bearer token (static or OAuth-issued) on /mcp routes.
 
     If `expected_token` is empty, the middleware is a no-op (development mode).
     """
@@ -48,17 +64,34 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         header = request.headers.get("authorization", "")
         scheme, _, token = header.partition(" ")
         if scheme.lower() != "bearer" or not token:
-            return JSONResponse(
-                {"error": "missing Authorization: Bearer <token>"},
-                status_code=401,
-            )
-        if not secrets.compare_digest(token, self.expected_token):
-            return JSONResponse({"error": "invalid token"}, status_code=403)
-        return await call_next(request)
+            return _unauthorized(request, "missing Authorization: Bearer <token>")
+        # Accept either the static bearer or an OAuth-issued access token.
+        if secrets.compare_digest(token, self.expected_token):
+            return await call_next(request)
+        if is_valid_access_token(token):
+            return await call_next(request)
+        return _unauthorized(request, "invalid token")
+
+
+def _unauthorized(request: Request, message: str) -> JSONResponse:
+    """Return 401 with a WWW-Authenticate header pointing Claude at OAuth discovery."""
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+    base = f"{proto}://{host}" if host else ""
+    resource_metadata = f"{base}/.well-known/oauth-protected-resource"
+    headers = {
+        "WWW-Authenticate": (
+            f'Bearer realm="gdrive-video-mcp", resource_metadata="{resource_metadata}"'
+        )
+    }
+    return JSONResponse({"error": message}, status_code=401, headers=headers)
 
 
 def _make_info_route(auth_mode: str):
-    async def root(_: Request) -> JSONResponse:
+    async def root(request: Request) -> JSONResponse:
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+        base = f"{proto}://{host}" if host else ""
         return JSONResponse(
             {
                 "name": "gdrive-video-mcp",
@@ -66,6 +99,11 @@ def _make_info_route(auth_mode: str):
                 "mcp_endpoint": "/mcp",
                 "auth": auth_mode,
                 "transport": "streamable-http",
+                "oauth": {
+                    "authorization_endpoint": f"{base}/oauth/authorize",
+                    "token_endpoint": f"{base}/oauth/token",
+                    "registration_endpoint": f"{base}/oauth/register",
+                },
             }
         )
 
@@ -103,13 +141,18 @@ def build_app(*, bearer_token: str | None = None, include_mcp: bool = True) -> S
         # MCP requires its session manager's lifespan to run; otherwise requests hang.
         lifespan_ctx = mcp_app.router.lifespan_context
 
-    return Starlette(
+    app = Starlette(
         routes=routes,
         middleware=[
             Middleware(BearerAuthMiddleware, expected_token=token),
         ],
         lifespan=lifespan_ctx,
     )
+    # OAuth routes must NOT go through the bearer middleware. Starlette
+    # middleware wraps the whole app, so we instead make BearerAuthMiddleware
+    # only protect the /mcp prefix (above) and attach OAuth routes alongside.
+    attach_oauth_routes(app)
+    return app
 
 
 # Module-level ASGI app for uvicorn / Fly. Reads token from env at import time.

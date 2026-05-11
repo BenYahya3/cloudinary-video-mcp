@@ -70,7 +70,9 @@ def test_mcp_rejects_wrong_token() -> None:
             json={},
             headers={"Authorization": "Bearer wrong"},
         )
-    assert r.status_code == 403
+    # Per OAuth 2.0 (RFC 6750), both missing and invalid tokens use 401
+    # with a WWW-Authenticate challenge so clients can begin the OAuth flow.
+    assert r.status_code == 401
 
 
 def test_mcp_accepts_correct_token() -> None:

@@ -1,0 +1,31 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.venv/
+
+# uv
+uv.lock
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Local credentials and tokens — never commit these
+credentials.json
+token.json
+client_secret*.json
+*.token
+.env
+.env.*
+
+# Test artifacts
+.pytest_cache/
+.ruff_cache/

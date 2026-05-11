@@ -12,24 +12,20 @@ def _tool_names() -> set[str]:
     return {t.name for t in tools}
 
 
+EXPECTED_TOOLS = {
+    "upload_from_url",
+    "upload_video",
+    "list_videos",
+    "get_video",
+    "delete_video",
+    "whoami",
+}
+
+
 def test_all_expected_tools_registered() -> None:
-    expected = {
-        "upload_from_url",
-        "list_videos",
-        "get_video",
-        "delete_video",
-        "whoami",
-    }
-    assert expected.issubset(_tool_names())
+    assert EXPECTED_TOOLS.issubset(_tool_names())
 
 
 def test_no_unexpected_extra_tools() -> None:
-    allowed = {
-        "upload_from_url",
-        "list_videos",
-        "get_video",
-        "delete_video",
-        "whoami",
-    }
-    extras = _tool_names() - allowed
+    extras = _tool_names() - EXPECTED_TOOLS
     assert not extras, f"Unexpected tools registered: {extras}"

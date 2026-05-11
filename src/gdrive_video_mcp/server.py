@@ -6,6 +6,9 @@ local development with `python -m gdrive_video_mcp.server`.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import mimetypes
 import os
 from typing import Any
 
@@ -60,8 +63,9 @@ mcp = FastMCP(
     "gdrive-video-mcp",
     instructions=(
         "Upload videos to Cloudinary and get back permanent CDN URLs. "
-        "Use upload_from_url for a public source URL, list_videos to browse "
-        "what's already uploaded, and get_video for a specific public_id."
+        "Use `upload_video` to upload a local file (pass its bytes as base64), "
+        "`upload_from_url` for a public source URL, `list_videos` to browse "
+        "what's already uploaded, and `get_video` for a specific public_id."
     ),
     stateless_http=True,
     transport_security=_transport_security(),
@@ -88,6 +92,57 @@ def upload_from_url(
     and Cloudinary public_id.
     """
     return upload_from_source(url, public_id=public_id, folder=folder, tags=tags)
+
+
+@mcp.tool()
+def upload_video(
+    file_data_base64: str,
+    filename: str = "",
+    public_id: str | None = None,
+    folder: str | None = None,
+    tags: list[str] | None = None,
+) -> dict[str, Any]:
+    """Upload a local video file to Cloudinary. Pass the file bytes as base64.
+
+    Use this when you have the video as raw bytes (e.g. a local file the user
+    attached) rather than a public URL.
+
+    Args:
+        file_data_base64: The video file contents, base64-encoded. May be a raw
+            base64 string or a full ``data:video/mp4;base64,...`` data URI.
+        filename: Optional original filename. Used to infer MIME type and as a
+            fallback for the Cloudinary public_id when one isn't provided.
+        public_id: Optional Cloudinary public_id (the slug part of the URL).
+        folder: Optional Cloudinary folder.
+        tags: Optional list of tags to attach to the asset.
+
+    Returns the uploaded asset's CDN URL, thumbnail URL, dimensions, duration,
+    and Cloudinary public_id.
+    """
+    data = (file_data_base64 or "").strip()
+    if not data:
+        raise ValueError("file_data_base64 is empty")
+
+    if data.startswith("data:"):
+        # Already a data URI — pass straight through.
+        source = data
+    else:
+        # Strip whitespace/newlines that some encoders insert.
+        b64 = "".join(data.split())
+        try:
+            base64.b64decode(b64, validate=True)
+        except (binascii.Error, ValueError) as e:
+            raise ValueError(f"file_data_base64 is not valid base64: {e}") from e
+        mime = (mimetypes.guess_type(filename)[0] if filename else None) or "video/mp4"
+        source = f"data:{mime};base64,{b64}"
+
+    if public_id is None and filename:
+        # Use the filename stem (without extension) as a stable public_id hint.
+        stem = os.path.splitext(os.path.basename(filename))[0].strip()
+        if stem:
+            public_id = stem
+
+    return upload_from_source(source, public_id=public_id, folder=folder, tags=tags)
 
 
 @mcp.tool()

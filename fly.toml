@@ -1,7 +1,7 @@
-# fly.toml — Fly.io deployment config for gdrive-video-mcp.
-# Replace `app = "gdrive-video-mcp"` if the subdomain is taken.
+# fly.toml — Fly.io deployment config for cloudinary-video-mcp.
+# Replace `app = "cloudinary-video-mcp"` if the subdomain is taken.
 
-app = "gdrive-video-mcp"
+app = "cloudinary-video-mcp"
 primary_region = "iad"
 
 [build]

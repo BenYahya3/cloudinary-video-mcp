@@ -23,12 +23,12 @@ def test_create_upload_link_returns_signed_url(monkeypatch):
     from gdrive_video_mcp.upload_link import create_upload_link, verify_token
 
     info = create_upload_link(
-        base_url="https://gdrive-video-mcp.fly.dev",
+        base_url="https://cloudinary-video-mcp.fly.dev",
         filename="tires 1.mp4",
         folder="cowork",
         tags=["claude"],
     )
-    assert info["upload_url"].startswith("https://gdrive-video-mcp.fly.dev/upload/")
+    assert info["upload_url"].startswith("https://cloudinary-video-mcp.fly.dev/upload/")
     assert info["public_id"] == "tires-1"
     assert info["folder"] == "cowork"
     assert info["expires_in_seconds"] > 0

@@ -42,7 +42,7 @@ def _transport_security() -> TransportSecuritySettings:
     """Build DNS-rebinding-protection settings from MCP_ALLOWED_HOSTS env var.
 
     Set MCP_ALLOWED_HOSTS to a comma-separated list of Host header values
-    (e.g. "gdrive-video-mcp.fly.dev"). Set it to "*" to disable the check
+    (e.g. "cloudinary-video-mcp.fly.dev"). Set it to "*" to disable the check
     entirely (only use this when the endpoint is gated by another auth layer,
     like our bearer middleware).
     """
@@ -215,7 +215,8 @@ def create_upload_link(
     instructions}``.
     """
     base_url = (
-        os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or "https://gdrive-video-mcp.fly.dev"
+        os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+        or "https://cloudinary-video-mcp.fly.dev"
     )
     return _create_upload_link(
         base_url=base_url,

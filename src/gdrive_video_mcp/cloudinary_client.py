@@ -6,10 +6,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-import cloudinary
-import cloudinary.api
-import cloudinary.uploader
-
 # Common video extensions used to filter local folders.
 VIDEO_EXTENSIONS: frozenset[str] = frozenset(
     {
@@ -35,19 +31,55 @@ def is_video_file(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS
 
 
-def configure_from_env() -> None:
-    """Configure the Cloudinary SDK from the CLOUDINARY_URL env var.
+def _normalize_cloudinary_url(raw: str) -> str:
+    """Strip common paste artifacts so users can supply any of these formats:
 
-    The cloudinary SDK auto-reads CLOUDINARY_URL at import time, but we call this
-    explicitly so callers get a clear error if the variable is missing.
+    - cloudinary://API_KEY:API_SECRET@CLOUD_NAME
+    - CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME
+    - export CLOUDINARY_URL=cloudinary://...
+    - "cloudinary://..." (with surrounding quotes)
     """
-    url = os.environ.get("CLOUDINARY_URL")
-    if not url:
+    val = raw.strip()
+    if val.lower().startswith("export "):
+        val = val[len("export ") :].strip()
+    if val.startswith("CLOUDINARY_URL="):
+        val = val[len("CLOUDINARY_URL=") :].strip()
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+        val = val[1:-1]
+    return val
+
+
+# Normalize the env var BEFORE importing cloudinary, which validates the scheme
+# at import time and raises if it doesn't start with 'cloudinary://'.
+_raw = os.environ.get("CLOUDINARY_URL", "")
+if _raw:
+    _norm = _normalize_cloudinary_url(_raw)
+    if _norm != _raw:
+        os.environ["CLOUDINARY_URL"] = _norm
+
+import cloudinary  # noqa: E402
+import cloudinary.api  # noqa: E402
+import cloudinary.uploader  # noqa: E402
+
+
+def configure_from_env() -> None:
+    """Validate that the Cloudinary SDK is configured. Raises on missing/bad URL."""
+    raw = os.environ.get("CLOUDINARY_URL")
+    if not raw:
         raise RuntimeError(
             "CLOUDINARY_URL is not set. Expected format: "
             "cloudinary://<api_key>:<api_secret>@<cloud_name>"
         )
-    # cloudinary.config() picks it up from env on its own, but call to validate.
+    normalized = _normalize_cloudinary_url(raw)
+    if not normalized.startswith("cloudinary://"):
+        raise RuntimeError(
+            "CLOUDINARY_URL must start with 'cloudinary://'. Find it in the Cloudinary "
+            "Console under Account Details → 'API Environment variable', and copy the "
+            "value after the '=' sign."
+        )
+    if normalized != raw:
+        os.environ["CLOUDINARY_URL"] = normalized
+        cloudinary.reset_config()
     cfg = cloudinary.config(secure=True)
     if not cfg.cloud_name:
         raise RuntimeError(

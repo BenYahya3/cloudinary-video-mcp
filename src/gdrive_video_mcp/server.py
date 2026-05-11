@@ -6,9 +6,11 @@ local development with `python -m gdrive_video_mcp.server`.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from gdrive_video_mcp.cloudinary_client import (
     delete_video as _delete_video,
@@ -26,6 +28,32 @@ from gdrive_video_mcp.cloudinary_client import (
     whoami as _whoami,
 )
 
+
+def _transport_security() -> TransportSecuritySettings:
+    """Build DNS-rebinding-protection settings from MCP_ALLOWED_HOSTS env var.
+
+    Set MCP_ALLOWED_HOSTS to a comma-separated list of Host header values
+    (e.g. "gdrive-video-mcp.fly.dev"). Set it to "*" to disable the check
+    entirely (only use this when the endpoint is gated by another auth layer,
+    like our bearer middleware).
+    """
+    raw = os.environ.get("MCP_ALLOWED_HOSTS", "").strip()
+    if not raw:
+        return TransportSecuritySettings()  # defaults — localhost only
+    if raw == "*":
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    hosts = [h.strip() for h in raw.split(",") if h.strip()]
+    # Allow both bare hostnames and http/https origins for those hosts.
+    origins: list[str] = []
+    for h in hosts:
+        origins.extend([f"https://{h}", f"http://{h}"])
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
+
+
 # stateless_http=True makes the Streamable HTTP transport stateless so it works
 # behind Fly's per-request load balancer without sticky sessions.
 mcp = FastMCP(
@@ -36,6 +64,7 @@ mcp = FastMCP(
         "what's already uploaded, and get_video for a specific public_id."
     ),
     stateless_http=True,
+    transport_security=_transport_security(),
 )
 
 

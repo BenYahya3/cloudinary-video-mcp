@@ -127,32 +127,41 @@ def build_app(*, bearer_token: str | None = None, include_mcp: bool = True) -> S
     ).strip()
     auth_mode = "bearer" if token else "none"
 
+    # Build the OAuth + discovery routes first; they must be evaluated BEFORE
+    # the catch-all Mount("/") for the MCP app, otherwise Starlette routes
+    # /.well-known/... and /oauth/... into the FastMCP app (which returns 404).
+    oauth_routes = _oauth_route_list()
     routes: list = [
         Route("/", _make_info_route(auth_mode), methods=["GET"]),
         Route("/healthz", healthz, methods=["GET"]),
+        *oauth_routes,
     ]
     lifespan_ctx = None
     if include_mcp:
         mcp_app = mcp.streamable_http_app()
         # FastMCP's app already routes /mcp internally; mount at root so the
-        # final URL is /mcp (not /mcp/mcp). Other routes above are matched first
+        # final URL is /mcp (not /mcp/mcp). The routes above are matched first
         # since Starlette evaluates routes in order.
         routes.append(Mount("/", app=mcp_app))
         # MCP requires its session manager's lifespan to run; otherwise requests hang.
         lifespan_ctx = mcp_app.router.lifespan_context
 
-    app = Starlette(
+    return Starlette(
         routes=routes,
         middleware=[
             Middleware(BearerAuthMiddleware, expected_token=token),
         ],
         lifespan=lifespan_ctx,
     )
-    # OAuth routes must NOT go through the bearer middleware. Starlette
-    # middleware wraps the whole app, so we instead make BearerAuthMiddleware
-    # only protect the /mcp prefix (above) and attach OAuth routes alongside.
-    attach_oauth_routes(app)
-    return app
+
+
+def _oauth_route_list():
+    """Return the OAuth + discovery routes (extracted from oauth.attach_routes)."""
+    from starlette.applications import Starlette as _S
+
+    tmp = _S()
+    attach_oauth_routes(tmp)
+    return list(tmp.router.routes)
 
 
 # Module-level ASGI app for uvicorn / Fly. Reads token from env at import time.

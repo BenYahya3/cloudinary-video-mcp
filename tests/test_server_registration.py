@@ -15,6 +15,7 @@ def _tool_names() -> set[str]:
 EXPECTED_TOOLS = {
     "upload_from_url",
     "upload_video",
+    "create_upload_link",
     "list_videos",
     "get_video",
     "delete_video",

@@ -30,6 +30,12 @@ from gdrive_video_mcp.cloudinary_client import (
 from gdrive_video_mcp.cloudinary_client import (
     whoami as _whoami,
 )
+from gdrive_video_mcp.upload_link import (
+    DEFAULT_TTL_SECONDS,
+)
+from gdrive_video_mcp.upload_link import (
+    create_upload_link as _create_upload_link,
+)
 
 
 def _transport_security() -> TransportSecuritySettings:
@@ -179,6 +185,46 @@ def delete_video(public_id: str) -> dict[str, Any]:
 def whoami() -> dict[str, Any]:
     """Return the configured Cloudinary cloud_name and (when available) usage stats."""
     return _whoami()
+
+
+@mcp.tool()
+def create_upload_link(
+    filename: str = "",
+    folder: str | None = None,
+    tags: list[str] | None = None,
+    public_id: str | None = None,
+    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+) -> dict[str, Any]:
+    """Generate a one-time browser upload URL for files too large to base64-encode.
+
+    Use this when the file is bigger than a few MB. Pass the returned
+    `upload_url` to the user; when they open it they get a drag-and-drop page
+    that uploads the file directly to Cloudinary via this server (no third
+    party). After they upload, look up the resulting asset via `get_video`
+    using the returned `public_id`, or poll `<upload_url>/status`.
+
+    Args:
+        filename: Original filename. Used to derive the default public_id.
+        folder: Optional Cloudinary folder to upload into.
+        tags: Optional list of tags.
+        public_id: Optional Cloudinary public_id (slug). Defaults to a slugified
+            version of the filename stem.
+        ttl_seconds: How long the link is valid for. Min 60s, max 24h, default 1h.
+
+    Returns ``{upload_url, public_id, folder, expires_at, expires_in_seconds,
+    instructions}``.
+    """
+    base_url = (
+        os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or "https://gdrive-video-mcp.fly.dev"
+    )
+    return _create_upload_link(
+        base_url=base_url,
+        filename=filename,
+        folder=folder,
+        tags=tags,
+        public_id=public_id,
+        ttl_seconds=ttl_seconds,
+    )
 
 
 def main() -> None:

@@ -146,6 +146,43 @@ def upload_from_source(
     return _normalize_video(result)
 
 
+# Threshold above which we chunk uploads (Cloudinary recommends ~20MB).
+_LARGE_UPLOAD_THRESHOLD_BYTES = 20 * 1024 * 1024
+
+
+def upload_file_stream(
+    file_path: str,
+    *,
+    public_id: str | None = None,
+    folder: str | None = None,
+    tags: list[str] | None = None,
+    overwrite: bool = True,
+) -> dict[str, Any]:
+    """Upload a local file by path. Uses chunked upload for large files."""
+    configure_from_env()
+    upload_args: dict[str, Any] = {
+        "resource_type": "video",
+        "overwrite": overwrite,
+        "unique_filename": public_id is None,
+    }
+    if public_id:
+        upload_args["public_id"] = public_id
+    if folder:
+        upload_args["folder"] = folder
+    if tags:
+        upload_args["tags"] = tags
+
+    size = os.path.getsize(file_path)
+    if size >= _LARGE_UPLOAD_THRESHOLD_BYTES:
+        # 6MB chunks — Cloudinary's recommended chunk size.
+        result = cloudinary.uploader.upload_large(
+            file_path, chunk_size=6 * 1024 * 1024, **upload_args
+        )
+    else:
+        result = cloudinary.uploader.upload(file_path, **upload_args)
+    return _normalize_video(result)
+
+
 def list_videos(
     folder: str | None = None,
     tag: str | None = None,

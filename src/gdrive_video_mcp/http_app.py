@@ -33,6 +33,7 @@ from gdrive_video_mcp import __version__
 from gdrive_video_mcp.oauth import attach_routes as attach_oauth_routes
 from gdrive_video_mcp.oauth import is_valid_access_token
 from gdrive_video_mcp.server import mcp
+from gdrive_video_mcp.upload_link import attach_routes as attach_upload_link_routes
 
 
 def _wants_oauth_advert(path: str) -> bool:
@@ -127,14 +128,16 @@ def build_app(*, bearer_token: str | None = None, include_mcp: bool = True) -> S
     ).strip()
     auth_mode = "bearer" if token else "none"
 
-    # Build the OAuth + discovery routes first; they must be evaluated BEFORE
-    # the catch-all Mount("/") for the MCP app, otherwise Starlette routes
-    # /.well-known/... and /oauth/... into the FastMCP app (which returns 404).
+    # Build the OAuth + discovery + upload-link routes first; they must be
+    # evaluated BEFORE the catch-all Mount("/") for the MCP app, otherwise
+    # Starlette routes /.well-known/... etc. into the FastMCP app (404).
     oauth_routes = _oauth_route_list()
+    upload_routes = _upload_route_list()
     routes: list = [
         Route("/", _make_info_route(auth_mode), methods=["GET"]),
         Route("/healthz", healthz, methods=["GET"]),
         *oauth_routes,
+        *upload_routes,
     ]
     lifespan_ctx = None
     if include_mcp:
@@ -161,6 +164,15 @@ def _oauth_route_list():
 
     tmp = _S()
     attach_oauth_routes(tmp)
+    return list(tmp.router.routes)
+
+
+def _upload_route_list():
+    """Return the upload-link routes (extracted from upload_link.attach_routes)."""
+    from starlette.applications import Starlette as _S
+
+    tmp = _S()
+    attach_upload_link_routes(tmp)
     return list(tmp.router.routes)
 
 
